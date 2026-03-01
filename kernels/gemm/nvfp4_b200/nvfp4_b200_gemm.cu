@@ -740,7 +740,8 @@ int main() {
 #include "pyutils/torchutils.cuh"
 #include "ATen/Functions.h"
 
-void nvfp4_gemm_entrypoint(
+template <typename C>
+void nvfp4_gemm_entrypoint_impl(
     const at::Tensor &A,
     const at::Tensor &A_sc,
     const at::Tensor &A_sc_global,
@@ -749,7 +750,6 @@ void nvfp4_gemm_entrypoint(
     const at::Tensor &B_sc_global,
     at::Tensor &D
 ) {
-    using C = nvfp4_gemm::config<256, 4, 8, 12, 2, false>;
     using G = nvfp4_gemm::globals<C>;
 
     G g {
@@ -763,6 +763,85 @@ void nvfp4_gemm_entrypoint(
     };
     kittens::py::launch_kernel<C, G, nvfp4_gemm::kernel<C>>(g);
 }
+
+void nvfp4_gemm_entrypoint(
+    const at::Tensor &A,
+    const at::Tensor &A_sc,
+    const at::Tensor &A_sc_global,
+    const at::Tensor &B,
+    const at::Tensor &B_sc,
+    const at::Tensor &B_sc_global,
+    at::Tensor &D
+) {
+    using C = nvfp4_gemm::config<256, 4, 8, 12, 2, false>;
+    nvfp4_gemm_entrypoint_impl<C>(A, A_sc, A_sc_global, B, B_sc, B_sc_global, D);
+}
+
+#define TK_DEFINE_CFG_ENTRY(ID, NB, LOAD, EPI, SUPER, DTILES, OVERLAP)       \
+void nvfp4_gemm_cfg_##ID##_entrypoint(                                        \
+    const at::Tensor &A,                                                      \
+    const at::Tensor &A_sc,                                                   \
+    const at::Tensor &A_sc_global,                                            \
+    const at::Tensor &B,                                                      \
+    const at::Tensor &B_sc,                                                   \
+    const at::Tensor &B_sc_global,                                            \
+    at::Tensor &D                                                             \
+) {                                                                            \
+    using C = nvfp4_gemm::config<NB, LOAD, EPI, SUPER, DTILES, OVERLAP>;      \
+    nvfp4_gemm_entrypoint_impl<C>(A, A_sc, A_sc_global, B, B_sc, B_sc_global, D); \
+}
+
+TK_DEFINE_CFG_ENTRY(0, 128, 5, 4, 12, 2, true)
+TK_DEFINE_CFG_ENTRY(1, 256, 5, 8, 4, 2, true)
+TK_DEFINE_CFG_ENTRY(2, 256, 5, 8, 4, 2, false)
+TK_DEFINE_CFG_ENTRY(3, 256, 4, 16, 1, 2, false)
+TK_DEFINE_CFG_ENTRY(4, 256, 4, 16, 12, 2, false)
+TK_DEFINE_CFG_ENTRY(5, 256, 4, 8, 12, 2, false)
+
+TK_DEFINE_CFG_ENTRY(6, 256, 5, 8, 8, 2, false)
+TK_DEFINE_CFG_ENTRY(7, 256, 5, 8, 12, 2, false)
+TK_DEFINE_CFG_ENTRY(8, 256, 5, 8, 16, 2, false)
+TK_DEFINE_CFG_ENTRY(9, 256, 4, 8, 8, 2, false)
+TK_DEFINE_CFG_ENTRY(10, 256, 4, 16, 4, 2, false)
+TK_DEFINE_CFG_ENTRY(11, 256, 4, 16, 8, 2, false)
+TK_DEFINE_CFG_ENTRY(12, 256, 4, 16, 16, 2, false)
+TK_DEFINE_CFG_ENTRY(13, 128, 5, 4, 4, 2, true)
+TK_DEFINE_CFG_ENTRY(14, 128, 5, 4, 8, 2, true)
+TK_DEFINE_CFG_ENTRY(15, 128, 4, 8, 4, 2, true)
+TK_DEFINE_CFG_ENTRY(16, 128, 4, 8, 8, 2, true)
+TK_DEFINE_CFG_ENTRY(17, 256, 4, 8, 12, 4, false)
+TK_DEFINE_CFG_ENTRY(18, 256, 4, 16, 12, 4, false)
+TK_DEFINE_CFG_ENTRY(19, 256, 5, 8, 12, 4, false)
+TK_DEFINE_CFG_ENTRY(20, 256, 5, 8, 24, 2, false)
+TK_DEFINE_CFG_ENTRY(21, 256, 4, 16, 24, 2, false)
+TK_DEFINE_CFG_ENTRY(22, 256, 5, 8, 6, 2, false)
+TK_DEFINE_CFG_ENTRY(23, 256, 4, 16, 6, 2, false)
+TK_DEFINE_CFG_ENTRY(24, 256, 3, 8, 12, 2, false)
+TK_DEFINE_CFG_ENTRY(25, 256, 3, 16, 12, 2, false)
+TK_DEFINE_CFG_ENTRY(26, 256, 4, 8, 12, 4, false)
+TK_DEFINE_CFG_ENTRY(27, 256, 5, 8, 12, 4, true)
+TK_DEFINE_CFG_ENTRY(28, 128, 5, 8, 12, 2, true)
+TK_DEFINE_CFG_ENTRY(30, 256, 5, 4, 12, 2, false)
+TK_DEFINE_CFG_ENTRY(31, 256, 5, 4, 24, 2, false)
+TK_DEFINE_CFG_ENTRY(32, 256, 4, 4, 12, 2, false)
+TK_DEFINE_CFG_ENTRY(33, 256, 4, 4, 24, 2, false)
+TK_DEFINE_CFG_ENTRY(34, 256, 3, 4, 12, 2, false)
+TK_DEFINE_CFG_ENTRY(38, 128, 5, 2, 8, 2, true)
+TK_DEFINE_CFG_ENTRY(39, 128, 4, 2, 8, 2, true)
+TK_DEFINE_CFG_ENTRY(40, 128, 3, 4, 8, 2, true)
+TK_DEFINE_CFG_ENTRY(41, 128, 3, 8, 8, 2, true)
+TK_DEFINE_CFG_ENTRY(42, 256, 5, 16, 12, 2, false)
+TK_DEFINE_CFG_ENTRY(43, 256, 5, 16, 24, 2, false)
+TK_DEFINE_CFG_ENTRY(44, 256, 4, 8, 24, 2, false)
+TK_DEFINE_CFG_ENTRY(45, 256, 4, 4, 6, 2, false)
+TK_DEFINE_CFG_ENTRY(46, 256, 3, 4, 24, 2, false)
+TK_DEFINE_CFG_ENTRY(47, 128, 5, 8, 16, 2, true)
+TK_DEFINE_CFG_ENTRY(48, 128, 4, 8, 16, 2, true)
+TK_DEFINE_CFG_ENTRY(49, 128, 5, 4, 16, 2, true)
+TK_DEFINE_CFG_ENTRY(50, 128, 4, 4, 12, 2, true)
+TK_DEFINE_CFG_ENTRY(51, 128, 3, 4, 12, 2, true)
+
+#undef TK_DEFINE_CFG_ENTRY
 
 void nvfp4_quantize_entrypoint(
     const at::Tensor &A_bf16,
@@ -784,6 +863,28 @@ void nvfp4_quantize_entrypoint(
     nvfp4_quantize::zero_kernel<<<1, 1>>>(g);
     nvfp4_quantize::absmax_kernel<<<nvfp4_quantize::absmax_config::NUM_BLOCKS, nvfp4_quantize::absmax_config::NUM_THREADS>>>(g);
     nvfp4_quantize::divide_kernel<<<1, 1>>>(g);
+    if (scale_2d) kittens::py::launch_kernel<C, G, nvfp4_quantize::quantize_kernel<true>>(g);
+    else          kittens::py::launch_kernel<C, G, nvfp4_quantize::quantize_kernel<false>>(g);
+}
+
+void nvfp4_quantize_with_global_entrypoint(
+    const at::Tensor &A_bf16,
+    at::Tensor &A_fp4x2,
+    at::Tensor &A_sc,
+    at::Tensor &A_sc_global,
+    bool scale_2d
+) {
+    using C = nvfp4_quantize::quantize_config;
+    using G = nvfp4_quantize::globals;
+
+    G g {
+        .A_bf16 = kittens::py::tensor_to_gl<G::A_bf16_gl>(A_bf16),
+        .A_fp4x2 = kittens::py::tensor_to_gl<G::A_fp4x2_gl>(A_fp4x2),
+        .A_sc = kittens::py::tensor_to_gl<G::A_sc_gl, false>(A_sc, 1, A_sc.size(0), A_sc.size(1), 256),
+        .A_sc_global = kittens::py::tensor_to_gl<G::A_sc_global_gl>(A_sc_global)
+    };
+
+    // Use caller-provided global scale in A_sc_global directly.
     if (scale_2d) kittens::py::launch_kernel<C, G, nvfp4_quantize::quantize_kernel<true>>(g);
     else          kittens::py::launch_kernel<C, G, nvfp4_quantize::quantize_kernel<false>>(g);
 }
@@ -822,7 +923,56 @@ at::Tensor fp4x2_to_fp32_entrypoint(at::Tensor A_fp4x2) {
 
 PYBIND11_MODULE(_C, m) {
     m.def("nvfp4_gemm", &nvfp4_gemm_entrypoint);
+    m.def("nvfp4_gemm_cfg0", &nvfp4_gemm_cfg_0_entrypoint);
+    m.def("nvfp4_gemm_cfg1", &nvfp4_gemm_cfg_1_entrypoint);
+    m.def("nvfp4_gemm_cfg2", &nvfp4_gemm_cfg_2_entrypoint);
+    m.def("nvfp4_gemm_cfg3", &nvfp4_gemm_cfg_3_entrypoint);
+    m.def("nvfp4_gemm_cfg4", &nvfp4_gemm_cfg_4_entrypoint);
+    m.def("nvfp4_gemm_cfg5", &nvfp4_gemm_cfg_5_entrypoint);
+    m.def("nvfp4_gemm_cfg6", &nvfp4_gemm_cfg_6_entrypoint);
+    m.def("nvfp4_gemm_cfg7", &nvfp4_gemm_cfg_7_entrypoint);
+    m.def("nvfp4_gemm_cfg8", &nvfp4_gemm_cfg_8_entrypoint);
+    m.def("nvfp4_gemm_cfg9", &nvfp4_gemm_cfg_9_entrypoint);
+    m.def("nvfp4_gemm_cfg10", &nvfp4_gemm_cfg_10_entrypoint);
+    m.def("nvfp4_gemm_cfg11", &nvfp4_gemm_cfg_11_entrypoint);
+    m.def("nvfp4_gemm_cfg12", &nvfp4_gemm_cfg_12_entrypoint);
+    m.def("nvfp4_gemm_cfg13", &nvfp4_gemm_cfg_13_entrypoint);
+    m.def("nvfp4_gemm_cfg14", &nvfp4_gemm_cfg_14_entrypoint);
+    m.def("nvfp4_gemm_cfg15", &nvfp4_gemm_cfg_15_entrypoint);
+    m.def("nvfp4_gemm_cfg16", &nvfp4_gemm_cfg_16_entrypoint);
+    m.def("nvfp4_gemm_cfg17", &nvfp4_gemm_cfg_17_entrypoint);
+    m.def("nvfp4_gemm_cfg18", &nvfp4_gemm_cfg_18_entrypoint);
+    m.def("nvfp4_gemm_cfg19", &nvfp4_gemm_cfg_19_entrypoint);
+    m.def("nvfp4_gemm_cfg20", &nvfp4_gemm_cfg_20_entrypoint);
+    m.def("nvfp4_gemm_cfg21", &nvfp4_gemm_cfg_21_entrypoint);
+    m.def("nvfp4_gemm_cfg22", &nvfp4_gemm_cfg_22_entrypoint);
+    m.def("nvfp4_gemm_cfg23", &nvfp4_gemm_cfg_23_entrypoint);
+    m.def("nvfp4_gemm_cfg24", &nvfp4_gemm_cfg_24_entrypoint);
+    m.def("nvfp4_gemm_cfg25", &nvfp4_gemm_cfg_25_entrypoint);
+    m.def("nvfp4_gemm_cfg26", &nvfp4_gemm_cfg_26_entrypoint);
+    m.def("nvfp4_gemm_cfg27", &nvfp4_gemm_cfg_27_entrypoint);
+    m.def("nvfp4_gemm_cfg28", &nvfp4_gemm_cfg_28_entrypoint);
+    m.def("nvfp4_gemm_cfg30", &nvfp4_gemm_cfg_30_entrypoint);
+    m.def("nvfp4_gemm_cfg31", &nvfp4_gemm_cfg_31_entrypoint);
+    m.def("nvfp4_gemm_cfg32", &nvfp4_gemm_cfg_32_entrypoint);
+    m.def("nvfp4_gemm_cfg33", &nvfp4_gemm_cfg_33_entrypoint);
+    m.def("nvfp4_gemm_cfg34", &nvfp4_gemm_cfg_34_entrypoint);
+    m.def("nvfp4_gemm_cfg38", &nvfp4_gemm_cfg_38_entrypoint);
+    m.def("nvfp4_gemm_cfg39", &nvfp4_gemm_cfg_39_entrypoint);
+    m.def("nvfp4_gemm_cfg40", &nvfp4_gemm_cfg_40_entrypoint);
+    m.def("nvfp4_gemm_cfg41", &nvfp4_gemm_cfg_41_entrypoint);
+    m.def("nvfp4_gemm_cfg42", &nvfp4_gemm_cfg_42_entrypoint);
+    m.def("nvfp4_gemm_cfg43", &nvfp4_gemm_cfg_43_entrypoint);
+    m.def("nvfp4_gemm_cfg44", &nvfp4_gemm_cfg_44_entrypoint);
+    m.def("nvfp4_gemm_cfg45", &nvfp4_gemm_cfg_45_entrypoint);
+    m.def("nvfp4_gemm_cfg46", &nvfp4_gemm_cfg_46_entrypoint);
+    m.def("nvfp4_gemm_cfg47", &nvfp4_gemm_cfg_47_entrypoint);
+    m.def("nvfp4_gemm_cfg48", &nvfp4_gemm_cfg_48_entrypoint);
+    m.def("nvfp4_gemm_cfg49", &nvfp4_gemm_cfg_49_entrypoint);
+    m.def("nvfp4_gemm_cfg50", &nvfp4_gemm_cfg_50_entrypoint);
+    m.def("nvfp4_gemm_cfg51", &nvfp4_gemm_cfg_51_entrypoint);
     m.def("nvfp4_quantize", &nvfp4_quantize_entrypoint);
+    m.def("nvfp4_quantize_with_global", &nvfp4_quantize_with_global_entrypoint);
     m.def("fp32_to_fp4x2", &fp32_to_fp4x2_entrypoint);
     m.def("fp4x2_to_fp32", &fp4x2_to_fp32_entrypoint);
 }
